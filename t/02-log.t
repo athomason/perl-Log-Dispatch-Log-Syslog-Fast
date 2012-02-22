@@ -40,20 +40,35 @@ my $log = Log::Dispatch->new(
 );
 ok $log, "created logger";
 
-my $msg = "Fatal error.";
-$log->emerg($msg);
-ok $log, "called logger";
-
 my $receiver = $listener->accept;
 $receiver->blocking(0);
 
-ok $listener, "listening on $port";
+sub get_data {
+    return unless ok(IO::Select->new($receiver)->can_read(1), "didn't time out waiting for log line");
+    $receiver->recv(my $buf, 1024);
+    return $buf;
+}
 
-if (ok(IO::Select->new($receiver)->can_read(1), "didn't time out waiting for log line")) {
-    $receiver->recv(my $buf, 256);
-    like $buf, qr/^<14>/, "priority value is correct";
-    like $buf, qr/foo\[$$\]/, "program name/pid is correct";
-    like $buf, qr/\Q$msg\E$/, "log message is correct";
+{
+    my $msg = "Fatal error.";
+    $log->error($msg);
+
+    if (my $buf = get_data) {
+        like $buf, qr/^<11>/, "priority value is correct" or note $buf;
+        like $buf, qr/foo\[$$\]/, "program name/pid is correct" or note $buf;
+        like $buf, qr/\Q$msg\E$/, "log message is correct" or note $buf;
+    }
+}
+
+{
+    my $msg = "Warning!";
+    $log->warn($msg);
+
+    if (my $buf = get_data) {
+        like $buf, qr/^<12>/, "priority value is correct" or note $buf;
+        like $buf, qr/foo\[$$\]/, "program name/pid is correct" or note $buf;
+        like $buf, qr/\Q$msg\E$/, "log message is correct" or note $buf;
+    }
 }
 
 done_testing;

@@ -9,7 +9,7 @@ use Log::Dispatch::Output;
 use parent qw( Log::Dispatch::Output );
 
 use Carp qw( croak );
-use Log::Syslog::Constants 1.02 qw( :functions );
+use Log::Syslog::Constants 1.02 qw( :functions :severities );
 use Log::Syslog::Fast 0.58 qw( :protos );
 use Params::Validate qw( validate SCALAR );
 use Sys::Hostname ();
@@ -75,22 +75,65 @@ sub _init {
         : undef;
     croak "unknown facility $p{facility}" unless defined $transport;
 
-    my $facility = get_facility($p{facility});
-    croak "unknown facility $p{facility}" unless defined $facility;
+    $self->{facility} = get_facility($p{facility});
+    croak "unknown facility $p{facility}" unless defined $self->{facility};
 
-    my $severity = get_severity($p{severity});
-    croak "unknown severity $p{severity}" unless defined $severity;
+    $self->{severity} = get_severity($p{severity});
+    croak "unknown severity $p{severity}" unless defined $self->{severity};
 
     my $logger = Log::Syslog::Fast->new(
-        $transport, $p{host}, $p{port}, $facility, $severity, $p{sender}, $p{name},
+        $transport, $p{host}, $p{port},
+        $self->{facility}, $self->{severity},
+        $p{sender}, $p{name},
     );
     die "failed to create Log::Syslog::Fast" unless $logger;
 
     $self->{logger} = $logger;
 }
 
+# mapping of levels defined in Log::Dispatch to syslog severity
+my %level2severity = (
+    0           => LOG_DEBUG,
+    debug       => LOG_DEBUG,
+
+    1           => LOG_INFO,
+    info        => LOG_INFO,
+
+    2           => LOG_NOTICE,
+    notice      => LOG_NOTICE,
+
+    3           => LOG_WARNING,
+    warn        => LOG_WARNING,
+    warning     => LOG_WARNING,
+
+    4           => LOG_ERR,
+    error       => LOG_ERR,
+    err         => LOG_ERR,
+
+    5           => LOG_CRIT,
+    critical    => LOG_CRIT,
+    crit        => LOG_CRIT,
+
+    6           => LOG_ALERT,
+    alert       => LOG_ALERT,
+
+    7           => LOG_EMERG,
+    emergency   => LOG_EMERG,
+    emerg       => LOG_EMERG,
+);
+
 sub log_message {
     my ($self, %p) = @_;
+
+    if (defined(my $level = $p{level})) {
+        if (defined(my $severity = $level2severity{lc $level})) {
+            if ($severity != $self->{severity}) {
+                $self->{severity} = $severity;
+                $self->{logger}->set_severity($self->{severity});
+            }
+        }
+    }
+
     $self->{logger}->send($p{message});
 }
 
